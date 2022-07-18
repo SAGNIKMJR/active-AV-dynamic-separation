@@ -39,7 +39,7 @@ Download the [Matterport3D](https://niessner.github.io/Matterport/) dataset, and
 We will add further info about the structuring of the associated datasets in ```audio_separation/config/default.py``` or the task configs soon.
 
 ## Code
-We will add ```bash``` commands to run training and evaluation soon.
+We will update the repo with clean and refactored code, and add ```bash``` commands to run training and evaluation soon.
 
 
 ## Citation

@@ -1,4 +1,4 @@
-# active-av-dynamic-separation
+# active-AV-dynamic-separation
 Code and datasets for 'Active Audio-Visual Separation of Dynamic Sound Sources' (ECCV 2022).
 
 # Active Audio-Visual Separation of Dynamic Sound Sources
@@ -25,7 +25,7 @@ pip3 install -r requirements.txt
 or by parsing ```requirements.txt``` to get the names and versions of individual dependencies and install them individually.
 
 ## Datasets
-Download the project-specific datasets from [this link](https://github.com/SAGNIKMJR/active-av-dynamic-separation), extract the zip and put it under the project root. The extracted ```data``` directory should have 3 types of data
+Download the project-specific datasets from [this link](https://tinyurl.com/yc23uuj9), extract the tar.gz and put it under the project root. The extracted ```data``` directory should have 3 types of data
 1. **audio_data**: the pre-processed and pre-normalized raw monaural audio waveforms for training and evaluation    
 2. **passive_datasets**: the dataset (audio source and receiver pair spatial attributes) for pre-training of passive separators    
 3. **active_datasets**: the dataset (episode specification) for training of Move2Hear policies   
@@ -36,7 +36,7 @@ Make a directory named ```sound_spaces``` and place it in the same directory as 
      
 Download the [Matterport3D](https://niessner.github.io/Matterport/) dataset, and cache the observations relevant for the SoundSpaces simulator using [this script](https://github.com/facebookresearch/sound-spaces/blob/main/scripts/cache_observations.py) from the [SoundSpaces repository](https://github.com/facebookresearch/sound-spaces). Use resolutions of ```128 x 128``` for both RGB and depth sensors. Place the cached observations for all scenes (.pkl files) in ```sound_spaces/scene_observations_new```.    
      
-We will add further info about the structuring of the associated datasets in ```audio_separation/config/default.py``` or the task configs soon.
+We will add further info about the structuring of the associated datasets in ```audio_separation/config/default.py``` and the task configs soon.
 
 ## Code
 We will update the repo with clean and refactored code, and add ```bash``` commands to run training and evaluation soon.

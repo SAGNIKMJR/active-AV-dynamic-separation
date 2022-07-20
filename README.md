@@ -5,7 +5,7 @@ Code and datasets for 'Active Audio-Visual Separation of Dynamic Sound Sources' 
 This repository contains the PyTorch implementation of our **ECCV-22 paper** and the associated datasets: 
 
 [Active Audio-Visual Separation of Dynamic Sound Sources](https://vision.cs.utexas.edu/projects/active-av-dynamic-separation)<br />
-Sagnik Majumder, Ziad Al-Halah, Kristen Grauman<br />
+Sagnik Majumder and Kristen Grauman<br />
 The University of Texas at Austin, Meta AI Research
 
 Project website: [https://vision.cs.utexas.edu/projects/active-av-dynamic-separation](https://vision.cs.utexas.edu/projects/active-av-dynamic-separation/)
@@ -45,7 +45,7 @@ We will update the repo with clean and refactored code, and add ```bash``` comma
 ## Citation
 ```
 @article{majumder2022active,
-    author    = {Majumder, Sagnik and Al-Halah, Ziad and Grauman, Kristen},
+    author    = {Majumder, Sagnik and Grauman, Kristen},
     title     = { Active Audio-Visual Separation of Dynamic Sound Sources},
     journal   = {arXiv preprint arXiv:2202.00850},,
     year      = {2022},

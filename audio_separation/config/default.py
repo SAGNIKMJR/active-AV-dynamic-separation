@@ -1,0 +1,287 @@
+from typing import List, Optional, Union
+import os
+import logging
+import shutil
+
+import numpy as np
+
+from habitat import get_config as get_task_config
+from habitat.config import Config as CN
+from habitat.config.default import SIMULATOR_SENSOR
+import habitat
+
+DEFAULT_CONFIG_DIR = "configs/"
+CONFIG_FILE_SEPARATOR = ","
+# -----------------------------------------------------------------------------
+# EXPERIMENT CONFIG
+# -----------------------------------------------------------------------------
+_C = CN()
+_C.SEED = 0
+_C.BASE_TASK_CONFIG_PATH = "configs/tasks/pointnav.yaml"
+_C.TASK_CONFIG = CN()  # task_config will be stored as a config node
+_C.CMD_TRAILING_OPTS = []  # store command line options as list of strings
+_C.TRAINER_NAME = "ppo"
+_C.ENV_NAME = "AAViDSSEnv"
+_C.SIMULATOR_GPU_ID = 0
+_C.TORCH_GPU_ID = 0
+_C.PARALLEL_GPU_IDS = []
+_C.MODEL_DIR = ''
+_C.VIDEO_OPTION = ["disk", "tensorboard"]
+_C.VISUALIZATION_OPTION = ["top_down_map"]
+_C.TENSORBOARD_DIR = "tb"
+_C.VIDEO_DIR = "video_dir"
+_C.AUDIO_DIR = "audio_dir"
+_C.EVAL_EPISODE_COUNT = 100
+_C.EVAL_CKPT_PATH_DIR = "data/checkpoints"  # path to ckpt or path to ckpts dir
+_C.NUM_PROCESSES = 16
+_C.SENSORS = ["RGB_SENSOR", "DEPTH_SENSOR"]
+_C.CHECKPOINT_FOLDER = "data/checkpoints"
+_C.NUM_UPDATES = 10000
+_C.LOG_INTERVAL = 10
+_C.LOG_FILE = "train.log"
+_C.CHECKPOINT_INTERVAL = 50
+_C.USE_VECENV = True
+_C.USE_SYNC_VECENV = False
+_C.DEBUG = False
+_C.NUM_SOUNDS_IN_MIX = 2
+_C.COMPUTE_EVAL_METRICS = False
+_C.EVAL_METRICS_TO_COMPUTE = ['si_sdr']
+_C.LOG_VIDEO_AFTER = 25
+_C.EPS_SCENES = []
+_C.EPS_SCENES_N_IDS = []
+_C.JOB_ID = 1
+# -----------------------------------------------------------------------------
+# EVAL CONFIG
+# -----------------------------------------------------------------------------
+_C.EVAL = CN()
+# The split to evaluate on
+_C.EVAL.SPLIT = "val"
+_C.EVAL.USE_CKPT_CONFIG = True
+# -----------------------------------------------------------------------------
+# REINFORCEMENT LEARNING (RL) ENVIRONMENT CONFIG
+# -----------------------------------------------------------------------------
+_C.RL = CN()
+_C.RL.SUCCESS_REWARD = 10.0
+_C.RL.SLACK_REWARD = -0.01
+_C.RL.WITH_DISTANCE_REWARD = True
+_C.RL.DISTANCE_REWARD_SCALE = 1.0
+# -----------------------------------------------------------------------------
+# PROXIMAL POLICY OPTIMIZATION (PPO)
+# -----------------------------------------------------------------------------
+_C.RL.PPO = CN()
+_C.RL.PPO.pretrained_passive_separators_ckpt = ""
+_C.RL.PPO.train_passive_separators = False
+_C.RL.PPO.clip_param = 0.2
+_C.RL.PPO.ppo_epoch = 4
+_C.RL.PPO.num_mini_batch = 16
+_C.RL.PPO.value_loss_coef = 0.5
+_C.RL.PPO.bin_separation_loss_coef = 1.0
+_C.RL.PPO.mono_separation_loss_coef = 1.0
+_C.RL.PPO.entropy_coef = 0.01
+_C.RL.PPO.lr_pol = 1e-4
+_C.RL.PPO.lr_passive_sep = 5e-4
+_C.RL.PPO.lr_active_sep = 5e-3
+_C.RL.PPO.eps = 1e-5
+_C.RL.PPO.max_grad_norm = 0.5
+_C.RL.PPO.num_steps = 5
+_C.RL.PPO.hidden_size = 512
+_C.RL.PPO.use_gae = True
+_C.RL.PPO.use_linear_lr_decay = False
+_C.RL.PPO.use_linear_clip_decay = False
+_C.RL.PPO.gamma = 0.99
+_C.RL.PPO.tau = 0.95
+_C.RL.PPO.reward_window_size = 50
+_C.RL.PPO.deterministic_eval = False
+_C.RL.PPO.use_ddppo = False
+_C.RL.PPO.ddppo_distrib_backend = "NCCL"
+_C.RL.PPO.short_rollout_threshold = 0.25
+_C.RL.PPO.sync_frac = 0.6
+_C.RL.PPO.master_port = 8738
+_C.RL.PPO.master_addr = "127.0.0.1"
+# -----------------------------------------------------------------------------
+# TRANSFORMER MEMORY
+# -----------------------------------------------------------------------------
+_C.RL.PPO.TRANSFORMER_MEMORY = CN()
+_C.RL.PPO.TRANSFORMER_MEMORY.num_past_steps_refinement = -1
+_C.RL.PPO.TRANSFORMER_MEMORY.memory_size = 19
+_C.RL.PPO.TRANSFORMER_MEMORY.input_size = 1024
+_C.RL.PPO.TRANSFORMER_MEMORY.hidden_size = 1024
+_C.RL.PPO.TRANSFORMER_MEMORY.num_layers = 2
+_C.RL.PPO.TRANSFORMER_MEMORY.nhead = 8
+_C.RL.PPO.TRANSFORMER_MEMORY.dropout = 0.1
+_C.RL.PPO.TRANSFORMER_MEMORY.activation = 'relu'
+_C.RL.PPO.TRANSFORMER_MEMORY.POSE_ENCODING = CN()
+_C.RL.PPO.TRANSFORMER_MEMORY.POSE_ENCODING.num_pose_encoding_inputs = 4
+_C.RL.PPO.TRANSFORMER_MEMORY.POSE_ENCODING.num_pose_encoding_dims = 16
+_C.RL.PPO.TRANSFORMER_MEMORY.POSE_ENCODING.sinsusoidal_pose_encoding_dims = 64
+# -----------------------------------------------------------------------------
+# Passive policy
+# -----------------------------------------------------------------------------
+_C.Pretrain = CN()
+_C.Pretrain.Passive = CN()
+_C.Pretrain.Passive.lr = 5.0e-4
+_C.Pretrain.Passive.eps = 1.0e-5
+_C.Pretrain.Passive.max_grad_norm = 0.8
+_C.Pretrain.Passive.num_epochs = 1000
+# -----------------------------------------------------------------------------
+# TASK CONFIG
+# -----------------------------------------------------------------------------
+_TC = habitat.get_config()
+_TC.defrost()
+# -----------------------------------------------------------------------------
+# MIXED BINAURAL AUDIO MAGNITUDE SENSOR
+# -----------------------------------------------------------------------------
+_TC.TASK.MIXED_BIN_AUDIO_MAG_SENSOR = CN()
+_TC.TASK.MIXED_BIN_AUDIO_MAG_SENSOR.TYPE = "MixedBinAudioMagSensor"
+_TC.TASK.MIXED_BIN_AUDIO_MAG_SENSOR.FEATURE_SHAPE = [512, 32, 2]
+
+# -----------------------------------------------------------------------------
+# MIXED BINAURAL AUDIO PHASE SENSOR
+# -----------------------------------------------------------------------------
+_TC.TASK.MIXED_BIN_AUDIO_PHASE_SENSOR = CN()
+_TC.TASK.MIXED_BIN_AUDIO_PHASE_SENSOR.TYPE = "MixedBinAudioPhaseSensor"
+_TC.TASK.MIXED_BIN_AUDIO_PHASE_SENSOR.FEATURE_SHAPE = [512, 32, 2]
+# -----------------------------------------------------------------------------
+# GROUND-TRUTH MONO COMPONENTS SENSOR
+# -----------------------------------------------------------------------------
+_TC.TASK.GT_MONO_COMPONENTS_SENSOR = CN()
+_TC.TASK.GT_MONO_COMPONENTS_SENSOR.TYPE = "GtMonoComponentsSensor"
+# default for 1 sound in the mixture ([mag, phase])
+_TC.TASK.GT_MONO_COMPONENTS_SENSOR.FEATURE_SHAPE = [512, 32, 2]
+# -----------------------------------------------------------------------------
+# GROUND-TRUTH BINAURAL COMPONENTS SENSOR
+# -----------------------------------------------------------------------------
+_TC.TASK.GT_BIN_COMPONENTS_SENSOR = CN()
+_TC.TASK.GT_BIN_COMPONENTS_SENSOR.TYPE = "GtBinComponentsSensor"
+# default for 1 sound in the mixture ([mag_l, phase_l, mag_r, phase_r])
+_TC.TASK.GT_BIN_COMPONENTS_SENSOR.FEATURE_SHAPE = [512, 32, 4]
+# -----------------------------------------------------------------------------
+# TARGET CLASS SENSOR
+# -----------------------------------------------------------------------------
+_TC.TASK.TARGET_CLASS_SENSOR = SIMULATOR_SENSOR.clone()
+_TC.TASK.TARGET_CLASS_SENSOR.TYPE = "TargetClassSensor"
+# -----------------------------------------------------------------------------
+# POSE SENSOR
+# -----------------------------------------------------------------------------
+_TC.TASK.POSE_SENSOR = CN()
+_TC.TASK.POSE_SENSOR.TYPE = "PoseSensor"
+# -----------------------------------------------------------------------------
+# habitat_audio
+# -----------------------------------------------------------------------------
+_TC.SIMULATOR.SEED = -1
+_TC.SIMULATOR.SCENE_DATASET = "mp3d"
+_TC.SIMULATOR.MAX_EPISODE_STEPS = 20 
+_TC.SIMULATOR.GRID_SIZE = 1.0
+_TC.SIMULATOR.USE_RENDERED_OBSERVATIONS = True
+_TC.SIMULATOR.RENDERED_OBSERVATIONS = 'data/scene_observations'
+_TC.SIMULATOR.AUDIO = CN()
+_TC.SIMULATOR.AUDIO.MONO_DIR = "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/train_preprocessed"
+_TC.SIMULATOR.AUDIO.RIR_DIR = "data/binaural_rirs/mp3d"
+_TC.SIMULATOR.AUDIO.META_DIR = "data/metadata/mp3d"
+_TC.SIMULATOR.AUDIO.PASSIVE_DATASET_VERSION = "v1"
+_TC.SIMULATOR.AUDIO.SOURCE_AGENT_LOCATION_DATAPOINTS_DIR = "data/passive_dataset/"
+_TC.SIMULATOR.AUDIO.PASSIVE_TRAIN_AUDIO_DIR = ""
+_TC.SIMULATOR.AUDIO.PASSIVE_NONOVERLAPPING_VAL_AUDIO_DIR = ""
+_TC.SIMULATOR.AUDIO.POINTS_FILE = 'points.txt'
+_TC.SIMULATOR.AUDIO.GRAPH_FILE = 'graph.pkl'
+_TC.SIMULATOR.AUDIO.GT_MONO_MAG_NORM = 0.0
+_TC.SIMULATOR.AUDIO.NORM_TYPE = "l2"
+_TC.SIMULATOR.AUDIO.RIR_SAMPLING_RATE = 16000
+_TC.SIMULATOR.AUDIO.NUM_WORKER = 4
+_TC.SIMULATOR.AUDIO.BATCH_SIZE = 128
+_TC.SIMULATOR.AUDIO.NUM_PASSIVE_DATAPOINTS_PER_SCENE = 30000
+_TC.SIMULATOR.AUDIO.NUM_PASSIVE_DATAPOINTS_PER_SCENE_EVAL = 1000
+
+
+def merge_from_path(config, config_paths):
+    if config_paths:
+        if isinstance(config_paths, str):
+            if CONFIG_FILE_SEPARATOR in config_paths:
+                config_paths = config_paths.split(CONFIG_FILE_SEPARATOR)
+            else:
+                config_paths = [config_paths]
+
+        for config_path in config_paths:
+            config.merge_from_file(config_path)
+    return config
+
+
+def get_config(
+    config_paths: Optional[Union[List[str], str]] = None,
+    opts: Optional[list] = None,
+    model_dir: Optional[str] = None,
+    run_type: Optional[str] = None
+) -> CN:
+	r"""Create a unified config with default values overwritten by values from
+	`config_paths` and overwritten by options from `opts`.
+	Args:
+	    config_paths: List of config paths or string that contains comma
+	    separated list of config paths.
+	    opts: Config options (keys, values) in a list (e.g., passed from
+	    command line into the config. For example, `opts = ['FOO.BAR',
+	    0.5]`. Argument can be used for parameter sweeping or quick tests.
+	    model_dir: suffix for output dirs
+	    run_type: either train or eval
+	"""
+	config = merge_from_path(_C.clone(), config_paths)
+	config.TASK_CONFIG = get_task_config(config_paths=config.BASE_TASK_CONFIG_PATH)
+
+	if opts:
+		config.CMD_TRAILING_OPTS = opts
+		config.merge_from_list(opts)
+
+	assert model_dir is not None, "set --model-dir"
+	config.MODEL_DIR = model_dir
+	config.TENSORBOARD_DIR = os.path.join(config.MODEL_DIR, config.TENSORBOARD_DIR)
+	config.CHECKPOINT_FOLDER = os.path.join(config.MODEL_DIR, 'data')
+	config.LOG_FILE = os.path.join(config.MODEL_DIR, config.LOG_FILE)
+	config.EVAL_CKPT_PATH_DIR = os.path.join(config.MODEL_DIR, 'data')
+
+	dirs = [config.TENSORBOARD_DIR, config.CHECKPOINT_FOLDER]
+	if run_type == 'train':
+		# check dirs
+		if any([os.path.exists(d) for d in dirs]):
+			for d in dirs:
+				if os.path.exists(d):
+					print('{} exists'.format(d))
+			key = input('Output directory already exists! Overwrite the folder? (y/n)')
+			if key == 'y':
+				for d in dirs:
+					if os.path.exists(d):
+						shutil.rmtree(d)
+
+	config.TASK_CONFIG.defrost()
+	config.TASK_CONFIG.SIMULATOR.USE_SYNC_VECENV = config.USE_SYNC_VECENV
+
+	config.TASK_CONFIG.TASK.GT_MONO_COMPONENTS_SENSOR.FEATURE_SHAPE[2] *= config.NUM_SOUNDS_IN_MIX
+	config.TASK_CONFIG.TASK.GT_BIN_COMPONENTS_SENSOR.FEATURE_SHAPE[2] *= config.NUM_SOUNDS_IN_MIX
+
+	config.TASK_CONFIG.SIMULATOR.MAX_EPISODE_STEPS = config.TASK_CONFIG.ENVIRONMENT.MAX_EPISODE_STEPS
+
+	config.TASK_CONFIG.freeze()
+
+	config.freeze()
+
+	return config
+
+
+def get_task_config(
+        config_paths: Optional[Union[List[str], str]] = None,
+        opts: Optional[list] = None
+) -> habitat.Config:
+    config = _TC.clone()
+    if config_paths:
+        if isinstance(config_paths, str):
+            if CONFIG_FILE_SEPARATOR in config_paths:
+                config_paths = config_paths.split(CONFIG_FILE_SEPARATOR)
+            else:
+                config_paths = [config_paths]
+
+        for config_path in config_paths:
+            config.merge_from_file(config_path)
+
+    if opts:
+        config.merge_from_list(opts)
+
+    config.freeze()
+    return config

@@ -3,5 +3,7 @@ data
 .ipynb_checkpoints/
 __pycache__
 runs
+runs_val
+runs_test
 my_config*
 my_scripts

@@ -1,0 +1,35 @@
+BASE_TASK_CONFIG_PATH: "configs/tasks/nearTarget/valUnheard_nearTarget.yaml"
+NUM_PROCESSES: 1
+SENSORS: ["RGB_SENSOR", "DEPTH_SENSOR"]
+EXTRA_DEPTH: True
+
+EVAL_EPISODE_COUNT: 100
+
+EVAL:
+  SPLIT: "valUnheard_100episodes"
+  USE_CKPT_CONFIG: True
+
+RL:
+  PPO:
+    deterministic_eval: False # False, True
+
+    hidden_size: 512
+
+    ### SEQ MEMORY
+    TRANSFORMER_MEMORY:
+        num_past_steps_refinement: 14
+
+        memory_size: 19 
+        input_size: 1024
+        hidden_size: 1024
+        num_layers: 2
+        nhead: 8
+        dropout: 0.0
+        activation: 'relu'
+
+        POSE_ENCODING:
+            num_pose_attrs: 4
+    
+    use_ddppo: True
+
+   

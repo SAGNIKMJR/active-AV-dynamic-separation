@@ -43,6 +43,8 @@ _C.CHECKPOINT_INTERVAL = 50
 _C.USE_VECENV = True
 _C.USE_SYNC_VECENV = False
 _C.DEBUG = False
+_C.EXTRA_RGB = False
+_C.EXTRA_DEPTH = False
 _C.NUM_SOUNDS_IN_MIX = 2
 _C.COMPUTE_EVAL_METRICS = False
 _C.EVAL_METRICS_TO_COMPUTE = ['si_sdr']
@@ -75,12 +77,9 @@ _C.RL.PPO.clip_param = 0.2
 _C.RL.PPO.ppo_epoch = 4
 _C.RL.PPO.num_mini_batch = 16
 _C.RL.PPO.value_loss_coef = 0.5
-_C.RL.PPO.bin_separation_loss_coef = 1.0
-_C.RL.PPO.mono_separation_loss_coef = 1.0
 _C.RL.PPO.entropy_coef = 0.01
 _C.RL.PPO.lr_pol = 1e-4
-_C.RL.PPO.lr_passive_sep = 5e-4
-_C.RL.PPO.lr_active_sep = 5e-3
+_C.RL.PPO.lr_sep = 5e-3
 _C.RL.PPO.eps = 1e-5
 _C.RL.PPO.max_grad_norm = 0.5
 _C.RL.PPO.num_steps = 5
@@ -111,9 +110,7 @@ _C.RL.PPO.TRANSFORMER_MEMORY.nhead = 8
 _C.RL.PPO.TRANSFORMER_MEMORY.dropout = 0.1
 _C.RL.PPO.TRANSFORMER_MEMORY.activation = 'relu'
 _C.RL.PPO.TRANSFORMER_MEMORY.POSE_ENCODING = CN()
-_C.RL.PPO.TRANSFORMER_MEMORY.POSE_ENCODING.num_pose_encoding_inputs = 4
-_C.RL.PPO.TRANSFORMER_MEMORY.POSE_ENCODING.num_pose_encoding_dims = 16
-_C.RL.PPO.TRANSFORMER_MEMORY.POSE_ENCODING.sinsusoidal_pose_encoding_dims = 64
+_C.RL.PPO.TRANSFORMER_MEMORY.POSE_ENCODING.num_pose_attrs = 4
 # -----------------------------------------------------------------------------
 # Passive policy
 # -----------------------------------------------------------------------------

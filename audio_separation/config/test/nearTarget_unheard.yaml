@@ -34,5 +34,3 @@ RL:
             num_pose_attrs: 4
     
     use_ddppo: True
-
-   

@@ -4,8 +4,7 @@ from habitat.core.simulator import ActionSpaceConfiguration
 from habitat.sims.habitat_simulator.actions import HabitatSimActions
 
 
-# extremely hacky and tacky way (accesssing private variables) to do the swap
-# TODO: come up with a better way or raise an issue.
+# extremely hacky and tacky way (accesssing private variables) to do the swap *
 HabitatSimActions.extend_action_space("PAUSE")
 temp = HabitatSimActions.STOP
 HabitatSimActions._known_actions["STOP"] = HabitatSimActions.PAUSE

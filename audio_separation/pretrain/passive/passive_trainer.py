@@ -7,7 +7,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import DataParallel
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 

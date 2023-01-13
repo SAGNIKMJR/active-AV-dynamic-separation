@@ -4,9 +4,6 @@ import torch
 
 
 class RolloutStoragePol:
-    r"""Class for storing rollout information for RL policy trainers.
-
-    """
     def __init__(
         self,
         num_steps,
@@ -15,6 +12,14 @@ class RolloutStoragePol:
         recurrent_hidden_state_size,
         num_recurrent_layers=1,
     ):
+        r"""
+        Class for storing rollout information for RL policy trainer.
+        :param num_steps: number of steps before PPO update
+        :param num_envs: number of training environments
+        :param observation_space: simulator observation space
+        :param recurrent_hidden_state_size: hidden state size for policy GRU
+        :param num_recurrent_layers: number of hidden layers in policy GRU
+        """
         self.observations = {}
 
         for sensor in observation_space.spaces:
@@ -94,6 +99,18 @@ class RolloutStoragePol:
         pred_binSepMasks=None,
         pred_monoFromMem=None,
     ):
+        r"""
+        Method for inserting useful scalars and tensors from the current step into the storage
+        :param observations: current observations from the simulator
+        :param recurrent_hidden_states_pol: current policy GRU hidden states
+        :param actions: current actions
+        :param action_log_probs: current action log probabilities
+        :param values: current values
+        :param rewards: current rewards
+        :param masks: current not-done masks
+        :param pred_binSepMasks: current binaural separation masks
+        :param pred_monoFromMem: current monaural predictions from transformer memory
+        """
         for sensor in observations:
             self.observations[sensor][self.step + 1].copy_(
                 observations[sensor]
@@ -123,6 +140,9 @@ class RolloutStoragePol:
         self.masks[0].copy_(self.masks[-1])
 
     def compute_returns(self, next_value, use_gae, gamma, tau):
+        r"""
+        compute returns with or without GAE
+        """
         if use_gae:
             self.value_preds[-1] = next_value
             gae = 0
@@ -143,6 +163,12 @@ class RolloutStoragePol:
                 )
 
     def recurrent_generator(self, advantages, num_mini_batch):
+        r"""
+        Recurrent batch generator for PPO update
+        :param advantages: advantage values needed for PPO update
+        :param num_mini_batch: number of mini batches to split all processes across all environments into
+        :return: current batch for doing forward and backward passes for PPO update
+        """
         num_processes = self.rewards.size(1)
         assert num_processes >= num_mini_batch, (
             "Trainer requires the number of processes ({}) "
@@ -265,9 +291,6 @@ class RolloutStoragePol:
 
 
 class RolloutStorageSep:
-    r"""Class for storing rollout information for random trainers.
-
-    """
     def __init__(
         self,
         num_steps,
@@ -278,6 +301,16 @@ class RolloutStorageSep:
         external_memory_dim=16384,  # 512 x 32 = 16384
         poseEnc_cfg=None,
     ):
+        r"""
+        Class for storing rollout information for audio separator trainer.
+        :param num_steps: number of steps before audio separator update
+        :param num_envs: number of training environments
+        :param observation_space: simulator observation space
+        :param external_memory_size: total size of external memory (for storing past monaural predictions) to account for non-0 PPO rollout size
+        :param external_memory_capacity: number of entries (past monaural predictions) in the external memory
+        :param external_memory_dim: dimensionality of past monaural predictions stored in external memory
+        :param poseEnc_cfg: pose encoding config
+        """
         self.poseEnc_cfg = poseEnc_cfg
 
         self.observations = {}
@@ -328,6 +361,13 @@ class RolloutStorageSep:
         pred_mono=None,
         skip_feats=None,
     ):
+        r"""
+        Method for inserting useful scalars and tensors from the current step into the storage
+        :param observations: current observations from the simulator
+        :param masks: current not-done masks
+        :param pred_mono: current monaural predictions from passive separator
+        :param skip_feats: skip connection features for current monaural
+        """
         for sensor in observations:
             self.observations[sensor][self.step + 1].copy_(
                 observations[sensor]
@@ -352,6 +392,11 @@ class RolloutStorageSep:
         self.masks[0].copy_(self.masks[-1])
 
     def recurrent_generator(self, num_mini_batch):
+        r"""
+        Recurrent batch generator for audio separator training
+        :param num_mini_batch: number of mini batches to split all processes across all environments into
+        :return: current batch for doing forward and backward passes for audio separator training
+        """
         num_processes = self.masks.size(1)
         assert num_processes >= num_mini_batch, (
             "Trainer requires the number of processes ({}) "
@@ -479,6 +524,7 @@ class ExternalMemory:
             total_size - capacity + additional buffer size for rollout updates
             dim - size of observations
             num_copies - number of copies of the data to maintain for efficient training
+            gt_mono_mag_shape - shape of mono magnitude spectrogram
         """
         self.num_envs = num_envs
         self.total_size = total_size
@@ -510,6 +556,14 @@ class ExternalMemory:
                skip_feats,
                gt_mono_mag, 
                masks,):
+        r"""
+        Method for inserting useful scalars and tensors from the current step into the external memory
+        :param em_mono: monaural from passive separator at current step
+        :param skip_feats: skip features for current monaural
+        :param gt_mono_mag: ground-truth monaural magnitude spectrogram at current step
+        :param masks: not done masks at current step
+        :return: None
+        """
 
         self.memory[self.idx].copy_(em_mono.unsqueeze(0))
         self.memory_gtMonoMag[self.idx].copy_(gt_mono_mag.unsqueeze(0))

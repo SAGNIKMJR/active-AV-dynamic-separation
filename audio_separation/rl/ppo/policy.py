@@ -124,6 +124,9 @@ class PassiveSepDec(nn.Module):
 
 
 class Policy(nn.Module):
+    r"""
+    Network for the full AAViDSS policy, including separation and action-making
+    """
     def __init__(self, pol_net, dim_actions, binSep_enc, binSep_dec, bin2mono_enc, bin2mono_dec, audio_mem, ppo_cfg,):
         super().__init__()
         self.dim_actions = dim_actions
@@ -167,11 +170,6 @@ class Policy(nn.Module):
                         pose,
                         sepExtMem_skipFeats=None,
                         ):
-        """
-        pred_mono_w_att: monoFromMem prediction
-        pred_mono_feats: features after encoding current mono ... these will be cached in the external memory
-
-        """
         pred_mono_feats, pred_skipFeats = self.audio_mem.encode_mono(pred_mono)
         assert len(pred_skipFeats) == 1, "implemented for just 1 skip connection b/w transformer encoder and decoder"
 

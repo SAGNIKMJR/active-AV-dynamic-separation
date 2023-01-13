@@ -3,4 +3,3 @@ from audio_separation.pretrain.passive.passive_trainer import PassiveTrainer
 
 
 __all__ = ["BaseTrainer", "BaseRLTrainer", "PPOTrainer", "RolloutStoragePol", "RolloutStorageSep", "PassiveTrainer"]
-# __all__ = ["BaseTrainer", "BaseRLTrainer", "PassiveTrainer"]

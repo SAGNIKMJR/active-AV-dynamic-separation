@@ -6,11 +6,15 @@ from audio_separation.common.utils import Flatten
 
 
 class VisualCNN(nn.Module):
-    r"""A Simple 3-Conv CNN followed by a fully connected layer for low res spec.
-    Takes in observations and produces an embedding of the rgb and/or depth components
+    r"""A Simple 3-Conv CNN followed by a fully connected layer for RGB images.
+
+    Takes in observations and produces an embedding of the rgb and/or depth components.
+
     Args:
         observation_space: The observation_space of the agent
         output_size: The size of the embedding vector
+        extra_rgb: RGB isn't used for encoding when True
+        extra_depth: depth isn't used for encoding when True
     """
 
     def __init__(self, observation_space, output_size, extra_rgb, extra_depth):
@@ -87,6 +91,7 @@ class VisualCNN(nn.Module):
     ):
         r"""Calculates the output height and width based on the input
         height and width to the convolution layer.
+
         ref: https://pytorch.org/docs/master/nn.html#torch.nn.Conv2d
         """
         assert len(dimension) == 2

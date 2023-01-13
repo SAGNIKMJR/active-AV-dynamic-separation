@@ -16,12 +16,10 @@ def _get_activation_fn(activation):
 
 
 class TransformerEncoderLayerCustom(nn.Module):
-    r"""TransformerEncoderLayerCustom is made up of self-attn and feedforward network.
-    This standard encoder layer is based on the paper "Attention Is All You Need".
-    Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
-    Lukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. In Advances in
-    Neural Information Processing Systems, pages 6000-6010. Users may modify or implement
-    in a different way during application.
+    r"""TransformerEncoderLayerCustom is customized TrasformerEncoderLayer (from ) following
+        'Attention is All You Need in Speech Separation' (https://arxiv.org/abs/2010.13154) and
+        'TransMask: A Compact and Fast Speech Separation Model Based on Transformer' (https://arxiv.org/abs/2102.09978),
+        where the layer norm is put after a skip connection starts.
 
     Args:
         d_model: the number of expected features in the input (required).
@@ -29,12 +27,6 @@ class TransformerEncoderLayerCustom(nn.Module):
         dim_feedforward: the dimension of the feedforward network model (default=2048).
         dropout: the dropout value (default=0.1).
         activation: the activation function of intermediate layer, relu or gelu (default=relu).
-        invert_ln_order: use layer norm after a skip connection starts (paper sources: SepFormer, TransMask, etc.)
-
-    Examples::
-        >>> encoder_layer = nn.TransformerEncoderLayerCustom(d_model=512, nhead=8)
-        >>> src = torch.rand(10, 32, 512)
-        >>> out = encoder_layer(src)
     """
 
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu",):
@@ -78,6 +70,9 @@ class TransformerEncoderLayerCustom(nn.Module):
 
 
 class DownsampleCNN(nn.Module):
+    r"""
+    CNN to encode (downsample) current monaural and past monaurals predicted by the passive separator.
+    """
     def __init__(self,):
         super().__init__()
 
@@ -135,6 +130,9 @@ class DownsampleCNN(nn.Module):
 
 
 class UpsampleCNN(nn.Module):
+    r"""
+    CNN to upsample monaural features encoded by the transformer memory.
+    """
     def __init__(self,):
         super().__init__()
         self._slicing_factor = 16
@@ -262,13 +260,23 @@ class AudioMem(nn.Module):
                               sepExtMem_mono_feats,
                               sepExtMem_skipFeats,
                               sepExtMem_masks,):
-        """downsampled_audio_features: [B, 1024];
-           ext_memory: [mem_size (cfg_mem_size + ppo_cfg_num_steps), B, trnsfrmr_cfg_input_size];
-           ext_memory_masks: [B, mem_size (cfg_mem_size + ppo_cfg_num_steps)];
+        r"""
+
+        :param pose: current pose
+        :param pred_mono_feats: encoded features of monaurals predicted from passive separator
+        :param skip_feats: skip connection features from encoding the current monaural
+        :param sepExtMem_mono_feats: encoded features of monaurals predicted from passive separator for past steps
+        :param sepExtMem_skipFeats: skip connection features from encoding past monaurals
+        :param sepExtMem_masks:
+        :return:
         """
+        # downsampled_audio_features: [B, 1024];
+        # ext_memory: [mem_size (cfg_mem_size + ppo_cfg_num_steps), B, trnsfrmr_cfg_input_size];
+        # ext_memory_masks: [B, mem_size (cfg_mem_size + ppo_cfg_num_steps)];
         assert pred_mono_feats.size(0) == sepExtMem_mono_feats.size(1),\
             print(pred_mono_feats.size(), sepExtMem_mono_feats.size())
 
+        # encoding poses from memory
         sepExtMem_poses = sepExtMem_mono_feats[..., -self.num_pose_attrs:]
         pose_feats, sepExtMem_pose_feats = self._encode_pose(pose, sepExtMem_poses)
 
@@ -276,10 +284,8 @@ class AudioMem(nn.Module):
 
         sepExtMem_mono_feats = sepExtMem_mono_feats[..., :-self.num_pose_attrs] + sepExtMem_pose_feats
 
-        """
-        ext_memory_masks: [B, mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1];
-        ext_memory: [mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1, B, trnsfrmr_cfg_input_size];
-        """
+        # sepExtMem_masks: [B, mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1];
+        # sepExtMem_mono_feats: [mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1, B, trnsfrmr_cfg_input_size];
         sepExtMem_masks = torch.cat([sepExtMem_masks, torch.ones([sepExtMem_masks.shape[0], 1],
                                                                  device=sepExtMem_masks.device)],
                                      dim=1)
@@ -307,18 +313,17 @@ class AudioMem(nn.Module):
 
     def _encode_pose(self, pose, sepExtMem_poses,):
         """
+        Encodes the time component of pose
         Args:
-            agent_pose: (bs, 4) Tensor containing x, y, heading, time
-            memory_pose: (M, bs, 4) Tensor containing x, y, heading, time
+            pose: (bs, 4) Tensor containing x, y, heading, time
+            sepExtMem_poses: (M, bs, 4) Tensor containing x, y, heading, time
         """
 
+        # encode just the time component of the pose
         pose_t = pose[..., 3:4]
         sepExtMem_poses_t = sepExtMem_poses[..., 3:4]
 
-        # Compute relative poses
-        """
-        Source: https://towardsdatascience.com/master-positional-encoding-part-i-63c05d90a0c3
-        """
+        # Compute relative poses. Source: https://towardsdatascience.com/master-positional-encoding-part-i-63c05d90a0c3
         freqs = MIN_FREQ ** (2 * (torch.arange(self.input_size, dtype=torch.float32) // 2) / self.input_size)
 
         pose_freqs = freqs.unsqueeze(0).repeat((pose_t.size(0), 1)).to(pose_t.device)

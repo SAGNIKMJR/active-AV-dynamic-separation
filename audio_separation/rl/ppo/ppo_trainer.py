@@ -2,29 +2,21 @@ import contextlib
 import os
 import time
 import logging
-from collections import deque, defaultdict
-from typing import Dict, List, Optional, DefaultDict
+from collections import deque
+from typing import Dict
 import json
 import random
-from PIL import Image
 import pickle
-from itertools import permutations
-import gc
 import gzip
-import librosa
-from copy import deepcopy
 
 import numpy as np
 import torch
 from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
 from numpy.linalg import norm
-from torch.nn import DataParallel
 from torch import distributed as distrib
-import torchaudio.transforms as T
 
 from habitat import Config, logger
-# from habitat.utils.visualizations.utils import observations_to_image, draw_collision
 from audio_separation.common.base_trainer import BaseRLTrainer
 from audio_separation.common.baseline_registry import baseline_registry
 from audio_separation.common.env_utils import construct_envs, override_rewards
@@ -32,13 +24,9 @@ from audio_separation.common.environments import get_env_class
 from audio_separation.common.rollout_storage import RolloutStoragePol, RolloutStorageSep, ExternalMemory
 from audio_separation.common.tensorboard_utils import TensorboardWriter
 from audio_separation.rl.ppo.ddppo_utils import (
-    EXIT,
-    REQUEUE,
     add_signal_handlers,
     init_distrib_slurm,
     load_interrupted_state,
-    requeue_job,
-    save_interrupted_state,
 )
 from audio_separation.common.utils import (
     batch_obs,
@@ -69,7 +57,7 @@ class PPOTrainer(BaseRLTrainer):
         r"""Sets up actor critic and agent for PPO.
 
         Args:
-            ppo_cfg: config node with relevant params
+            is_eval: if in eval_mode
 
         Returns:
             None
@@ -78,7 +66,7 @@ class PPOTrainer(BaseRLTrainer):
 
         ppo_cfg = self.config.RL.PPO
 
-        assert self.config.EXTRA_DEPTH or self.config.EXTRA_RGB, "set atleast one of EXTRA_RGB and EXTRA_DEPTH to true"
+        assert self.config.EXTRA_DEPTH or self.config.EXTRA_RGB, "set at least one of EXTRA_RGB and EXTRA_DEPTH to true"
 
         if not is_eval:
             assert ppo_cfg.pretrained_passive_separators_ckpt != "", "set to path of pretrained passive separator checkpoint"
@@ -143,6 +131,29 @@ class PPOTrainer(BaseRLTrainer):
             episode_counts, episode_steps, episode_dist_probs, episode_bin_losses_allSteps, episode_mono_losses_lastStep,
             episode_mono_losses_allSteps, episode_monoFromMem_losses_lastStep, episode_monoFromMem_losses_allSteps,
     ):
+        r"""
+        collects rollouts for training separator in supervised fashion and the policy with PPO
+        :param rollouts_pol: rollout storage for policy
+        :param rollouts_sep: rollout storage for separator
+        :param current_episode_reward: reward for the current epispde
+        :param current_episode_step: number of steps for the current episode
+        :param current_episode_dist_probs: policy distribution for all actions for current episode
+        :param current_episode_bin_losses: binaural losses for passive separator for current episode
+        :param current_episode_mono_losses: monaural losses for passive separator for current episode
+        :param current_episode_monoFromMem_losses: monaural losses on audio memory predictions for current episode
+        :param episode_rewards: rewards for all episodes
+        :param episode_counts: number of all episodes
+        :param episode_steps: number of episode steps for all episodes
+        :param episode_dist_probs: policy distribution for all actions for all episodes
+        :param episode_bin_losses_allSteps: binaural losses over all steps for passive separator for all episodes
+        :param episode_mono_losses_lastStep: monaural losses at last step for passive separator for all episodes
+        :param episode_mono_losses_allSteps: monaural losses over all steps for passive separator for all episodes
+        :param episode_monoFromMem_losses_lastStep: monaural losses on memory predictions at last step for all episodes
+        :param episode_monoFromMem_losses_allSteps: monaural losses on memory predictions over all step for all episodes
+        :return: 1. pth_time: time needed for pytorch forward pass
+                 2. env_time: time needed for environment simulation with Habitat
+                 3. self.envs.num_envs: number of active environments in the simulator
+        """
         ppo_cfg = self.config.RL.PPO
 
         sepExtMem_cfg = ppo_cfg.TRANSFORMER_MEMORY
@@ -152,7 +163,7 @@ class PPOTrainer(BaseRLTrainer):
         env_time = 0.0
 
         t_pred_current_step = time.time()
-        # sample actions
+        # get binaural and mono predictions, and sample actions
         with torch.no_grad():
             step_observation = {
                 k: v[rollouts_pol.step] for k, v in rollouts_pol.observations.items()
@@ -181,22 +192,12 @@ class PPOTrainer(BaseRLTrainer):
                                                   sepExtMem_skipFeats=sepExtMem_skipFeats,
                                                   )
 
-            """
-            pred_monoFromMem_aftrAtt_feats: [mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1, B,
-                                                      trnsfrmr_cfg_input_size]
-            """
-            pred_monoFromMem_aftrAtt_feats = pred_monoFromMem_aftrAtt_feats.permute(1, 0, 2,)
             sepExtMem_masks_wCurrStep =\
                 torch.cat([sepExtMem_masks, torch.ones([sepExtMem_masks.shape[0], 1],
                                                        device=sepExtMem_masks.device)],
                           dim=1)
 
-            """will need the next variable to figure out from where to take the features after attn for policy input
-            ...since the feature indxs to use for separation are taken from the masks that only have at 
-            max num_past_steps_refinement indxs active, their absolute positions in the episode are forgotten"""
-            sepExtMem_masks_wCurrStep_allPastStepsMarked = sepExtMem_masks_wCurrStep.clone()
-            valid_prediction_idxs_allPastStepsMarked = torch.where(sepExtMem_masks_wCurrStep_allPastStepsMarked == 1.0)
-
+            # find out indexes to set num_past_steps_refinement steps to True
             bs, M = sepExtMem_masks_wCurrStep.size()
             newest_sepExtMem_masks_wCurrStep = sepExtMem_masks_wCurrStep[:, -1:].clone()
             old_sepExtMem_masks_wCurrStep = sepExtMem_masks_wCurrStep[:, :-1].clone()
@@ -207,7 +208,7 @@ class PPOTrainer(BaseRLTrainer):
                 old_activeColsFirstProcess_sepExtMem_masks_wCurrStep =\
                     old_activeIdxs_sepExtMem_masks_wCurrStep[1].view(bs, -1)[0]
 
-                """hacky and slow way to find out which idxs to choose for num_past_steps_refinement"""
+                # hacky and slow way to find out which idxs to choose for num_past_steps_refinement
                 active_old_col = -1
                 wrap_around_in_mem = False
                 for active_col in old_activeColsFirstProcess_sepExtMem_masks_wCurrStep:
@@ -289,8 +290,8 @@ class PPOTrainer(BaseRLTrainer):
 
             valid_prediction_idxs = torch.where(sepExtMem_masks_wCurrStep == 1.0)
 
-            """needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
-            reward if there is a wraparound the memory to avoid bug"""
+            # needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
+            # reward if there is a wraparound the memory to avoid bug
             valid_prediction_cols = valid_prediction_idxs[1]
             bs, M = sepExtMem_masks_wCurrStep.size()
             valid_prediction_cols = valid_prediction_cols.contiguous().view(bs, -1)
@@ -298,6 +299,7 @@ class PPOTrainer(BaseRLTrainer):
             active_old_col = -1
             active_old_col_idx = 0
             wrap_around_in_mem = False
+
             for active_col in valid_prediction_cols[0][:-1]:
                 if active_old_col != -1:
                     if active_old_col != (active_col.item() - 1):
@@ -305,6 +307,7 @@ class PPOTrainer(BaseRLTrainer):
                         break
                 active_old_col = active_col.item()
                 active_old_col_idx += 1
+
             if wrap_around_in_mem:
                 valid_prediction_cols_toComputeLosses =\
                     torch.cat((valid_prediction_cols[:, :-1][:, active_old_col_idx:],
@@ -312,26 +315,9 @@ class PPOTrainer(BaseRLTrainer):
                                valid_prediction_cols[:, -1:]), dim=1)
             else:
                 valid_prediction_cols_toComputeLosses = valid_prediction_cols.clone()
+
             valid_prediction_idxs_toComputeLosses = (valid_prediction_idxs[0].clone(),
                                                      valid_prediction_cols_toComputeLosses.view(-1).contiguous())
-
-            valid_prediction_rows = valid_prediction_idxs[0]
-            valid_prediction_rows = valid_prediction_rows.contiguous().view(bs, -1)
-
-            """rotated afterAtt features in case of wrap_around_in_mem"""
-            pred_monoFromMem_aftrAtt_feats =\
-                pred_monoFromMem_aftrAtt_feats[valid_prediction_idxs_toComputeLosses[0],
-                                               valid_prediction_idxs_toComputeLosses[1]]
-            pred_monoFromMem_aftrAtt_feats =\
-                pred_monoFromMem_aftrAtt_feats.contiguous().view(pred_mono.size(0),
-                                                                 1,
-                                                                 -1,
-                                                                 pred_monoFromMem_aftrAtt_feats.size(1))
-
-            gt_mono_mag =\
-                step_observation["gt_mono_comps"][:, :, :, 0::2].clone()[:, :, :, 0].unsqueeze(-1)
-            gt_mono_phase =\
-                step_observation["gt_mono_comps"][:, :, :, 1::2].clone()[:, :, :, 0].unsqueeze(-1)
 
             (
                 values,
@@ -390,14 +376,11 @@ class PPOTrainer(BaseRLTrainer):
 
             next_gt_mono_mag =\
                 batch["gt_mono_comps"][:, :, :, 0::2].clone()[:, :, :, 0].unsqueeze(-1)
-            next_gt_mono_phase =\
-                batch["gt_mono_comps"][:, :, :, 1::2].clone()[:, :, :, 0].unsqueeze(-1)
         pth_time += time.time() - t_pred_next_step
 
         t_compute_lossesNrewards = time.time()
         # this works because all processes have equal number of steps
-        """current step tensor manipulations for reward"""
-        """permute in the next if-else construct changes dimensionality from [T, B, ...] to [B, T, ...]"""
+        # current step tensor manipulations for reward"""
         gt_mono_mag_toComputeLosses =\
             rollouts_pol.observations["gt_mono_comps"][max(0,
                                                            rollouts_pol.step + 1 - (num_past_steps_refinement + 1))
@@ -418,45 +401,30 @@ class PPOTrainer(BaseRLTrainer):
                                                             gt_mono_phase_toComputeLosses.size(1),
                                                             *gt_mono_phase_toComputeLosses.size()[2:])
 
-        """pred_monoFromMem_toComputeLosses after this step: [B, mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1, 512, 32, 1]"""
+        # pred_monoFromMem_toComputeLosses after this step: [B, mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1, 512, 32, 1]"""
         pred_monoFromMem_toComputeLosses = pred_monoFromMem.permute(1, 0, 2, 3, 4)
 
-
-        """needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
-        reward if there is a wraparound the memory to avoid bug"""
+        # needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
+        # reward if there is a wraparound the memory to avoid bug"""
         pred_monoFromMem_toComputeLosses = pred_monoFromMem_toComputeLosses[valid_prediction_idxs_toComputeLosses[0],
                                                                             valid_prediction_idxs_toComputeLosses[1]]
 
-        """next step tensor manipulations for reward"""
-        """permute in the next if-else construct changes dimensionality from [T, B, ...] to [B, T, ...]"""
+        # next step tensor manipulations for reward
         next_gt_mono_mag_toComputeLosses =\
             rollouts_pol.observations["gt_mono_comps"][max(0, rollouts_pol.step + 2 -\
                                                            (num_past_steps_refinement + 1)):
                                                        rollouts_pol.step + 2][..., 0::2]\
                 .clone()[..., 0].unsqueeze(-1).permute(1, 0, 2, 3, 4)
-
-        """next step copying most recent target to the most recent step (previously not doing this.. bug!!)"""
         next_gt_mono_mag_toComputeLosses[:, -1].copy_(batch["gt_mono_comps"][:, :, :, 0::2].clone()[:, :, :, 0].unsqueeze(-1))
-        next_gt_mono_mag_toComputeLosses =\
-            next_gt_mono_mag_toComputeLosses.contiguous().view(next_gt_mono_mag_toComputeLosses.size(0) *
-                                                               next_gt_mono_mag_toComputeLosses.size(1),
-                                                               *next_gt_mono_mag_toComputeLosses.size()[2:])
 
         next_gt_mono_phase_toComputeLosses =\
             rollouts_pol.observations["gt_mono_comps"][max(0, rollouts_pol.step + 2 -
                                                            (num_past_steps_refinement + 1))
                                                        :rollouts_pol.step + 2][..., 1::2]\
                 .clone()[..., 0].unsqueeze(-1).permute(1, 0, 2, 3, 4)
-        """next step copying most recent target to the most recent step (previously not doing this.. bug!!)"""
         next_gt_mono_phase_toComputeLosses[:, -1].copy_(batch["gt_mono_comps"][:, :, :, 1::2].clone()[:, :, :, 0].unsqueeze(-1))
-        next_gt_mono_phase_toComputeLosses =\
-            next_gt_mono_phase_toComputeLosses.contiguous().view(next_gt_mono_phase_toComputeLosses.size(0) *
-                                                                 next_gt_mono_phase_toComputeLosses.size(1),
-                                                                 *next_gt_mono_phase_toComputeLosses.size()[2:])
 
-        """
-        next_pred_monoFromMem_toComputeLosses after this step: [B, mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1, 512, 32, 1]
-        """
+        # next_pred_monoFromMem_toComputeLosses after this step: [B, mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1, 512, 32, 1]
         next_pred_monoFromMem_toComputeLosses = next_pred_monoFromMem.permute(1, 0, 2, 3, 4)
 
         next_sepExtMem_masks_wCurrStep =\
@@ -558,16 +526,14 @@ class PPOTrainer(BaseRLTrainer):
                                                next_old_activeCols_sepExtMem_masks_wCurrStep] = 1.0
             next_old_sepExtMem_masks_wCurrStep = next_old_sepExtMem_masks_wCurrStep.contiguous().view(bs, -1)
 
-        """new code (should do the same as old code but still changing for uniformity),
-           concatenation along dim=1 (should be same as last dim. since it's a 2D vector)"""
         next_sepExtMem_masks_wCurrStep =\
             torch.cat((next_old_sepExtMem_masks_wCurrStep,
                        next_newest_sepExtMem_masks_wCurrStep), dim=1)
 
         next_valid_prediction_idxs = torch.where(next_sepExtMem_masks_wCurrStep == 1.0)
 
-        """needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
-        reward if there is a wraparound the memory to avoid bug"""
+        # needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
+        # reward if there is a wraparound the memory to avoid bug
         next_valid_prediction_cols = next_valid_prediction_idxs[1]
         bs, M = next_sepExtMem_masks_wCurrStep.size()
         next_valid_prediction_cols = next_valid_prediction_cols.contiguous().view(bs, -1)
@@ -589,12 +555,12 @@ class PPOTrainer(BaseRLTrainer):
                            next_valid_prediction_cols[:, -1:]), dim=1)
         else:
             next_valid_prediction_cols_toComputeLosses = next_valid_prediction_cols.clone()
-        """checking if rotation of cols that might be needed for mem_size (num_steps + trans_cfg_mem_size) working or not"""
+        # checking if rotation of cols that might be needed for mem_size (num_steps + trans_cfg_mem_size) working or not
         next_valid_prediction_idxs_toComputeLosses = (next_valid_prediction_idxs[0].clone(),
                                                       next_valid_prediction_cols_toComputeLosses.view(-1).contiguous())
 
-        """needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
-        reward if there is a wraparound the memory to avoid bug"""
+        # needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
+        # reward if there is a wraparound the memory to avoid bug
         next_pred_monoFromMem_toComputeLosses =\
             next_pred_monoFromMem_toComputeLosses[next_valid_prediction_idxs_toComputeLosses[0],
                                                   next_valid_prediction_idxs_toComputeLosses[1]]
@@ -611,12 +577,9 @@ class PPOTrainer(BaseRLTrainer):
 
         compute_losses = False
         last_step = False
-        """
-        next_pred_monoFromMem_toComputeLosses.size(0) == pred_monoFromMem_toComputeLosses.size(0) : all num_past_steps_refinement getting predicted
-        next_pred_monoFromMem_toComputeLosses.size(0) < pred_monoFromMem_toComputeLosses.size(0) : last step of episode
-        next_pred_monoFromMem_toComputeLosses.size(0) > pred_monoFromMem_toComputeLosses.size(0) : one of  first num_past_steps_refinement - 1 steps
-        """
-        """the very next if only needed to compute STFT L2 loss"""
+        # next_pred_monoFromMem_toComputeLosses.size(0) == pred_monoFromMem_toComputeLosses.size(0) : all num_past_steps_refinement getting predicted
+        # next_pred_monoFromMem_toComputeLosses.size(0) < pred_monoFromMem_toComputeLosses.size(0) : last step of episode
+        # next_pred_monoFromMem_toComputeLosses.size(0) > pred_monoFromMem_toComputeLosses.size(0) : one of  first num_past_steps_refinement - 1 steps
         if (next_pred_monoFromMem_toComputeLosses.size(0) == pred_monoFromMem_toComputeLosses.size(0)) or\
                 (next_pred_monoFromMem_toComputeLosses.size(0) < pred_monoFromMem_toComputeLosses.size(0)):
             compute_losses = True
@@ -701,7 +664,6 @@ class PPOTrainer(BaseRLTrainer):
 
         pth_time += time.time() - t_update_stats
 
-        # pol_em_features: [mem_size (sep_self_attn_cfg_mem_size + ppo_cfg.num_steps) + 1, B, feat_size]
         rollouts_pol.insert(
             batch,
             recurrent_hidden_states_pol,
@@ -717,6 +679,14 @@ class PPOTrainer(BaseRLTrainer):
         return pth_time, env_time, self.envs.num_envs
 
     def _update_pol(self, rollouts_pol,):
+        """
+        updates AAViDSS policy
+        :param rollouts_pol: rollout storage for the policy
+        :return: 1. time.time() - t_update_model: time needed for policy update
+                 2. value_loss: PPO value loss in this update
+                 3. action_loss: PPO actions loss in this update
+                 4. dist_entropy: PPO entropy loss in this update
+        """
         ppo_cfg = self.config.RL.PPO
         t_update_model = time.time()
         with torch.no_grad():
@@ -748,6 +718,14 @@ class PPOTrainer(BaseRLTrainer):
         )
 
     def _update_sep(self, rollouts_sep):
+        """
+        updates audio memory (passive separators frozen)
+        :param rollouts_sep:
+        :return:    1. time.time() - t_update_model: time needed for separator (acoustic memory) update
+                    2. bin_loss: binaural loss for the passive separator in this update (for debugging)
+                    3. mono_loss: monaural loss for the passive separator in this update (for debugging)
+                    4. monoFromMem_loss: computed on the output of the acoustic memory)
+        """
         t_update_model = time.time()
 
         bin_loss, mono_loss, monoFromMem_loss = self.agent.update_sep(rollouts_sep)
@@ -798,7 +776,7 @@ class PPOTrainer(BaseRLTrainer):
                 param.requires_grad_(False)
 
     def train(self) -> None:
-        r"""Main method for training PPO.
+        r"""Main method for training cyclic training of AAViDSS policy and separator..
 
         Returns:
             None
@@ -895,7 +873,7 @@ class PPOTrainer(BaseRLTrainer):
             rollouts_pol.observations[sensor][0].copy_(batch[sensor])
             rollouts_sep.observations[sensor][0].copy_(batch[sensor])
 
-        # episode_rewards and episode_counts accumulates over the entire training course
+        # episode_x accumulates over the entire training course
         episode_rewards = torch.zeros(self.envs.num_envs, 1)
         episode_counts = torch.zeros(self.envs.num_envs, 1)
         episode_steps = torch.zeros(self.envs.num_envs, 1)
@@ -1005,6 +983,7 @@ class PPOTrainer(BaseRLTrainer):
 
                 pth_time += delta_pth_time
 
+                # computing stats
                 if ppo_cfg.use_ddppo:
                     stat_idx = 0
                     stat_idx_num_actions = 0
@@ -1225,16 +1204,17 @@ class PPOTrainer(BaseRLTrainer):
             writer: tensorboard writer object for logging to tensorboard
             checkpoint_index: index of cur checkpoint for logging
 
-        Returns:_goal_reached_once
+        Returns:
             None
         """
         random.seed(self.config.SEED)
         np.random.seed(self.config.SEED)
         torch.manual_seed(self.config.SEED)
 
-        """map location CPU is almost always better than mapping to a CUDA device."""
+        # map location CPU is almost always better than mapping to a CUDA device.
         ckpt_dict = self.load_checkpoint(checkpoint_path, map_location="cpu")
 
+        # setting up config
         if self.config.EVAL.USE_CKPT_CONFIG:
             config = self._setup_eval_config(ckpt_dict["config"])
         else:
@@ -1244,6 +1224,7 @@ class PPOTrainer(BaseRLTrainer):
         config.TASK_CONFIG.DATASET.SPLIT = config.EVAL.SPLIT
         config.freeze()
 
+        # eval on those scenes only whose names are given in the eval config
         if len(config.EPS_SCENES) != 0:
             full_dataset_path = os.path.join(config.TASK_CONFIG.DATASET.DATA_PATH.split("{")[0],
                                              config.TASK_CONFIG.DATASET.VERSION,
@@ -1278,15 +1259,16 @@ class PPOTrainer(BaseRLTrainer):
 
         env_cfg = config.TASK_CONFIG.ENVIRONMENT
 
-        """"setting up envs"""
+        # setting up envs
         self.envs = construct_envs(
             config, get_env_class(config.ENV_NAME),
         )
 
-        """setting up agents"""
-        # our agent
+        # setting up agent
         self._setup_actor_critic_agent(is_eval=True)
 
+        ########### TEMPORARY VARIABLES / OBJECTS FOR EVAL ########
+        # loading trained weights to policies,  creating empty tensors for eval and setting flags for policy switching in eval
         self.agent.load_state_dict(ckpt_dict["state_dict"])
         self.actor_critic = self.agent.actor_critic
         self.actor_critic.eval()
@@ -1332,8 +1314,9 @@ class PPOTrainer(BaseRLTrainer):
         gtMono_computeLosses_thisEpisode = []
 
         t = tqdm(total=config.EVAL_EPISODE_COUNT)
-        """variables to count episodes, steps per eval process and in total"""
         active_envs = list(range(self.envs.num_envs))
+        # these are particularly useful for multi-process eval but code doesn't support it for now (feel free to start a PR
+        # to include changes for multi-process eval)
         step_count_all_processes = torch.zeros(config.NUM_PROCESSES, 1)
         episode_count_all_processes = torch.zeros(config.NUM_PROCESSES, 1)
         num_episode_numbers_taken = config.NUM_PROCESSES - 1
@@ -1359,26 +1342,28 @@ class PPOTrainer(BaseRLTrainer):
             eval_metrics_toDump["mono"]["STFT_L2_loss"] = {}
             eval_metrics_toDump["monoFromMem"]["STFT_L2_loss"] = {}
 
-        """reset envs and getting first set of obs"""
+        # resetting environments for 1st step of eval
         observations = self.envs.reset()
         batch = batch_obs(observations, self.device)
 
-        """eval loop (loop over episode)"""
+        # looping over episodes
         while (
             len(stats_episodes) < config.EVAL_EPISODE_COUNT
             and self.envs.num_envs > 0
         ):
             current_episodes = self.envs.current_episodes()
 
-            """scene id and episode id"""
+            ### ALL CODE HERE ONWARDS ASSUME 1-PROCESS EVAL
+            # scene and episode id
             current_scene = current_episodes[0].scene_id.split('/')[-2]
             current_episode_id = current_episodes[0].episode_id
 
-            """episode and step count"""
+            # episode and step count
             current_episode_count = int(episode_count_all_processes[0].item())
             current_step_count = int(step_count_all_processes[0].item())
 
-            """hack to not collect stats from environments which have finished"""
+            # particularly useful for multi-process eval
+            # hack to not collect stats from environments which have finished
             active_envs_tmp = []
             for env_idx in active_envs:
                 if env_idx > 0:
@@ -1387,9 +1372,8 @@ class PPOTrainer(BaseRLTrainer):
                     active_envs_tmp.append(env_idx)
             active_envs = active_envs_tmp
 
-            # TODO: deterministic = True or False?
-            """get separation masks"""
             with torch.no_grad():
+                # passive-separate mono given target class
                 pred_binSepMasks =\
                     self.actor_critic.get_binSepMasks(
                         batch
@@ -1413,18 +1397,12 @@ class PPOTrainer(BaseRLTrainer):
                                                       sepExtMem_skipFeats=sepExtMem_skipFeats,
                                                       )
 
-                pred_monoFromMem_aftrAtt_feats = pred_monoFromMem_aftrAtt_feats.permute(1, 0, 2,)
                 sepExtMem_masks_wCurrStep = torch.cat([sepExtMem_masks,
                                                        torch.ones([sepExtMem_masks.shape[0], 1],
                                                                   device=sepExtMem_masks.device)],
                                                       dim=1)
 
-                """will need the next variable to figure out where to place the features after attn for policy input
-                ...since the feature indxs to use are taken from the masks that only have at max k_old_steps indxs active,
-                their absolute positions in the episode are forgotten"""
-                sepExtMem_masks_wCurrStep_allPastStepsMarked = sepExtMem_masks_wCurrStep.clone()
-                valid_prediction_idxs_allPastStepsMarked = torch.where(sepExtMem_masks_wCurrStep_allPastStepsMarked == 1.0)
-
+                # find out indexes to set num_past_steps_refinement steps to True
                 bs, M = sepExtMem_masks_wCurrStep.size()
                 newest_sepExtMem_masks_wCurrStep = sepExtMem_masks_wCurrStep[:, -1:].clone()
                 old_sepExtMem_masks_wCurrStep = sepExtMem_masks_wCurrStep[:, :-1].clone()
@@ -1434,7 +1412,7 @@ class PPOTrainer(BaseRLTrainer):
                     old_activeColsFirstProcess_sepExtMem_masks_wCurrStep =\
                         old_activeIdxs_sepExtMem_masks_wCurrStep[1].view(bs, -1)[0]
 
-                    """hacky and slow way to find out which idxs to choose for k_old_steps"""
+                    # hacky and slow way to find out which idxs to choose for num_past_steps_refinement
                     active_old_col = -1
                     wrap_around_in_mem = False
                     for active_col in old_activeColsFirstProcess_sepExtMem_masks_wCurrStep:
@@ -1525,8 +1503,8 @@ class PPOTrainer(BaseRLTrainer):
 
                 valid_prediction_idxs = torch.where(sepExtMem_masks_wCurrStep == 1.0)
 
-                """needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
-                reward if there is a wraparound the memory to avoid bug"""
+                # needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
+                # reward if there is a wraparound the memory to avoid bug
                 valid_prediction_cols = valid_prediction_idxs[1]
                 bs, M = sepExtMem_masks_wCurrStep.size()
                 valid_prediction_cols = valid_prediction_cols.contiguous().view(bs, -1)
@@ -1551,7 +1529,7 @@ class PPOTrainer(BaseRLTrainer):
                 valid_prediction_idxs_toComputeLosses = (valid_prediction_idxs[0].clone(),
                                                          valid_prediction_cols_toComputeLosses.view(-1).contiguous())
 
-                """current step tensor manipulations for loss computation"""
+                # current step tensor manipulations for loss computation
                 gt_mono_mag_toComputeLosses =\
                     gtMonoMag_thisEpisode[max(0, current_step_count + 1 - (num_past_steps_refinement + 1)):
                                           current_step_count + 1][..., 0::2].clone()[..., 0].unsqueeze(-1).permute(1, 0, 2, 3, 4)
@@ -1568,19 +1546,19 @@ class PPOTrainer(BaseRLTrainer):
                         .view(gt_mono_phase_toComputeLosses.size(0) * gt_mono_phase_toComputeLosses.size(1),
                               *gt_mono_phase_toComputeLosses.size()[2:])
 
-                """pred_monoFromMem_toComputeLosses after this step: [B, mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1, 512, 32, 1]"""
+                # pred_monoFromMem_toComputeLosses after this step: [B, mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1, 512, 32, 1]
                 pred_monoFromMem_toComputeLosses = pred_monoFromMem.permute(1, 0, 2, 3, 4)
 
-                """needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
-                reward if there is a wraparound the memory to avoid bug"""
+                # needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
+                # reward if there is a wraparound the memory to avoid bug
                 pred_monoFromMem_toComputeLosses = pred_monoFromMem_toComputeLosses[valid_prediction_idxs_toComputeLosses[0],
                                                                                     valid_prediction_idxs_toComputeLosses[1]]
 
                 if current_step_count >= num_past_steps_refinement:
                     if current_step_count == (env_cfg.MAX_EPISODE_STEPS - 1):
                         for stepIdx_pastStepsRefine in range(torch.cat((gt_mono_mag_toComputeLosses,
-                                                         gt_mono_phase_toComputeLosses),
-                                                        dim=-1).size(0)):
+                                                                        gt_mono_phase_toComputeLosses),
+                                                                       dim=-1).size(0)):
                             pred_monoFromMem_computeLosses_thisEpisode.append(
                                 pred_monoFromMem_toComputeLosses[stepIdx_pastStepsRefine].unsqueeze(0)
                             )
@@ -1631,6 +1609,7 @@ class PPOTrainer(BaseRLTrainer):
             pred_binSepMasks_thisEpisode.append(pred_binSepMasks.detach())
             gtBinComps_thisEpisode.append(batch["gt_bin_comps"].clone())
 
+            # last step
             if current_step_count == (env_cfg.MAX_EPISODE_STEPS - 1):
                 assert done
                 monoFromMem_losses_thisEpisode = []
@@ -1661,6 +1640,7 @@ class PPOTrainer(BaseRLTrainer):
             monoLosses_thisEpisode.append(mono_losses[0][0].item())
 
             if config.COMPUTE_EVAL_METRICS:
+                # works only for 1 process, idx=0 used for infos
                 mixedAudioMag_thisEpisode_computeQualMetrics.append(batch["mixed_bin_audio_mag"][0].unsqueeze(0).cpu().numpy())
                 mixedAudioPhase_thisEpisode_computeQualMetrics.append(batch["mixed_bin_audio_phase"][0].unsqueeze(0).cpu().numpy())
                 pred_mono_thisEpisode_computeQualMetrics.append(pred_mono[0].unsqueeze(0).detach().cpu().numpy())
@@ -1717,18 +1697,20 @@ class PPOTrainer(BaseRLTrainer):
                     lst_gtMonoMag_thisEpisode_computeQualMetrics = []
                     lst_gtMonoPhase_thisEpisode_computeQualMetrics = []
 
+            # batch being re-assigned here because current batch used in the computation of eval metrics
             batch = batch_obs(observations, self.device)
             step_count_all_processes += 1
             next_episodes = self.envs.current_episodes()
             next_scene = next_episodes[0].scene_id.split('/')[-2]
             next_episode_id = next_episodes[0].episode_id
 
+            # particularly useful for multi-process eval
             for env_idx in active_envs:
                 if env_idx > 0:
                     raise NotImplementedError
-                """intermediate steps in episode"""
 
-                if  not_done_masks[env_idx].item() == 0:
+                # episode has ended
+                if not_done_masks[env_idx].item() == 0:
                     test_em.reset(self.device)
                     gtMonoMag_thisEpisode = torch.zeros(
                         env_cfg.MAX_EPISODE_STEPS,
@@ -1740,28 +1722,34 @@ class PPOTrainer(BaseRLTrainer):
                     pred_monoFromMem_computeLosses_thisEpisode = []
                     gtMono_computeLosses_thisEpisode = []
 
+                    # stats of simulator-returned performance metrics
                     episode_stats = dict()
 
+                    # use scene + episode_id as unique id for storing stats
+                    assert (current_scene, current_episode_id) not in stats_episodes
+                    stats_episodes[(current_scene, current_episode_id)] = episode_stats
+
+                    # eval metrics (STFT losses) for logging to log
                     mono_losses_last_step.append(mono_losses[env_idx][0].item())
                     mono_losses_all_steps.append(mono_loss_this_episode / step_count_all_processes[env_idx].item())
                     mono_loss_this_episode = 0.
-
                     monoFromMem_losses_last_step.append(monoFromMem_losses[env_idx][0].item())
                     monoFromMem_losses_all_steps.append(monoFromMem_loss_this_episode / step_count_all_processes[env_idx].item())
                     monoFromMem_loss_this_episode = 0.
 
-                    assert (current_scene, current_episode_id) not in stats_episodes
-                    stats_episodes[(current_scene, current_episode_id)] = episode_stats
+                     # update tqdm object
                     t.update()
 
-                    """incrementing episode_counter and resetting step counter"""
+                    # particularly useful for multi-process eval
                     if (next_scene, next_episode_id) not in stats_episodes:
                         episode_count_all_processes[env_idx] = num_episode_numbers_taken + 1
                         num_episode_numbers_taken += 1
                         step_count_all_processes[env_idx] = 0
 
+        # closing the open environments after iterating over all episodes
         self.envs.close()
 
+        # mean and std of simulator-returned metrics and STFT L2 losses
         aggregated_stats = dict()
         for stat_key in next(iter(stats_episodes.values())).keys():
             aggregated_stats[stat_key] = dict()
@@ -1785,6 +1773,7 @@ class PPOTrainer(BaseRLTrainer):
         aggregated_stats["monoFromMem_loss_all_steps"]["mean"] = np.mean(monoFromMem_losses_all_steps)
         aggregated_stats["monoFromMem_loss_all_steps"]["std"] = np.std(monoFromMem_losses_all_steps)
 
+        # dump stats file to disk
         stats_file = os.path.join(config.TENSORBOARD_DIR,
                                   '{}_stats_{}.json'.format(config.EVAL.SPLIT,
                                                             config.SEED))
@@ -1797,6 +1786,7 @@ class PPOTrainer(BaseRLTrainer):
             with open(os.path.join(config.MODEL_DIR, "eval_metrics.pkl"), "wb") as fo:
                 pickle.dump(eval_metrics_toDump, fo, protocol=pickle.HIGHEST_PROTOCOL)
 
+        # writing metrics to train.log and terminal
         logger.info("Mono STFT L2 loss at last step --- mean: {mean:.6f}, std: {std:.6f}"\
                     .format(mean=aggregated_stats["mono_loss_last_step"]["mean"],
                             std=aggregated_stats["mono_loss_last_step"]["std"]))

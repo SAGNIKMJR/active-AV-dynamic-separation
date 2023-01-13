@@ -112,10 +112,6 @@ class PPO(nn.Module):
                     pred_binSepMasks_batch,
                 )
 
-                # compute audio separation loss
-                # using new predictions because exact supervision
-                # TODO: should update be done every few steps i.e. is batch size = NUM_PROCESSES too small?
-                # TODO: separate optimizer and lr scheduler?
                 ratio = torch.exp(
                     action_log_probs - old_action_log_probs_batch
                 )
@@ -257,8 +253,10 @@ class PPO(nn.Module):
         return bin_loss_epoch, mono_loss_epoch, monoFromMem_loss_epoch
 
     def process_sepExtMem_masks(self, sepExtMem_masks,):
-        """
-        t_masks: [B, mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1];
+        r"""
+        set 'num_past_steps_refinement' indexes in external memory masks to 1 and the rest to 0
+        :param sepExtMem_masks: external memory masks
+        :return: processed external memory masks
         """
         bs, M = sepExtMem_masks.size()
 
@@ -422,7 +420,5 @@ class DecentralizedDistributedMixin:
 
 
 # Mixin goes second that way the PPO __init__ will still be called
-# class DDPPO(PPO, DecentralizedDistributedMixin):
-#     pass
 class DDPPO(DecentralizedDistributedMixin, PPO):
     pass

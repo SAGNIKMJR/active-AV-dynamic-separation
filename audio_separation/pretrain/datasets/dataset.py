@@ -9,6 +9,7 @@ from scipy.signal import fftconvolve
 import torch
 from torch.utils.data import Dataset
 
+# 100 LibriSpeech classes, 1 combined music class from MIT MUSIC, 1 combined ESC-50 class (only used as background distractor)
 CLASS_NAMES_TO_LABELS = {'7540': 41, '3274': 78, '5727': 82, '5157': 9, '3436': 67, '4731': 47, '4057': 1, '3851': 72,
                          '7932': 15, '597': 80, '119': 58, '345': 10, '460': 45, '868': 33, '909': 56, '125': 37,
                          '203': 50, '667': 32, '1578': 66, '2194': 44, '957': 30, '2137': 65, '2299': 8, '2319': 21,
@@ -177,7 +178,6 @@ class PassiveDataset(Dataset):
         gt_mono_mag = []
         gt_bin_mag = []
         mixed_binaural_wave = 0
-        target_class_idx = -1
         for idx, rir_audio in enumerate(rirs_audio):
             binaural_rir_file = os.path.join(self.binaural_rir_dir, rir_audio[0])
             mono_audio = self.file2audio_dict[rir_audio[1]]
@@ -241,4 +241,3 @@ class PassiveDataset(Dataset):
         mixed_mag = np.stack([magnitude_l, magnitude_r], axis=-1).astype("float32")
 
         return np.log1p(mixed_mag), gt_bin_mag, gt_mono_mag, np.array([target_class]).astype("int64")
-

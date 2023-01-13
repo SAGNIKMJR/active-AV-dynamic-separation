@@ -189,6 +189,9 @@ class GtBinComponentsSensor(Sensor):
 
 @registry.register_sensor(name="TargetClassSensor")
 class TargetClassSensor(Sensor):
+    r"""Target class for the current episode
+    """
+
     def __init__(
         self, sim: Union[Simulator, Config], config: Config, *args: Any, **kwargs: Any
     ):

@@ -26,7 +26,7 @@ def unet_upconv(input_nc, output_nc, kernel_size=(4, 4), outermost=False, norm_l
 
 class PassiveSepEncCNN(nn.Module):
     r"""A U-net encoder for passive separation.
-    Takes in mixed binaural audio or predicted clean binaural and produces an clean binaural or clean monaural embeddings
+    Takes in mixed binaural audio or predicted clean binaural and produces a clean binaural or clean monaural embeddings
     and skip-connection feature list, respectively.
     Args:
         convert_bin2mono: creates encoder for converting binaural to monaural if set to True
@@ -108,7 +108,7 @@ class PassiveSepEncCNN(nn.Module):
 
 class PassiveSepDecCNN(nn.Module):
     r"""A U-net decoder for passive separation.
-    Takes in feature embeddings and skip-connection feature list and produces an clean binaural or clean monaural, respectively.
+    Takes in feature embeddings and skip-connection feature list and produces a clean binaural or clean monaural, respectively.
     Args:
         convert_bin2mono: creates encoder for converting binaural to monaural if set to True
     """

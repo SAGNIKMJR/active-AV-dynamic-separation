@@ -16,14 +16,12 @@ def main():
     parser.add_argument(
         "--run-type",
         choices=["train", "eval"],
-        # required=True,
         default='train',
         help="run type of the experiment (train or eval)",
     )
     parser.add_argument(
         "--exp-config",
         type=str,
-        # required=True,
         default='baselines/config/pointnav_rgb.yaml',
         help="path to config yaml containing info about experiment",
     )
@@ -52,15 +50,11 @@ def main():
     )
     args = parser.parse_args()
 
-    # repo = git.Repo(search_parent_directories=True)
-    # logging.info('Current git head hash code: {}'.format(repo.head.object.hexsha))
-
     # run exp
     config = get_config(args.exp_config, args.opts, args.model_dir, args.run_type)
     trainer_init = baseline_registry.get_trainer(config.TRAINER_NAME)
     assert trainer_init is not None, f"{config.TRAINER_NAME} is not supported"
     trainer = trainer_init(config)
-    # torch.set_num_threads(1)
 
     level = logging.DEBUG if config.DEBUG else logging.INFO
     logging.basicConfig(level=level, format='%(asctime)s, %(levelname)s: %(message)s',

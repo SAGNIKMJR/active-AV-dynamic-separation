@@ -191,6 +191,12 @@ _TC.SIMULATOR.AUDIO.NUM_PASSIVE_DATAPOINTS_PER_SCENE_EVAL = 1000
 
 
 def merge_from_path(config, config_paths):
+	"""
+	merge config with configs from config paths
+	:param config: original unmerged config
+	:param config_paths: config paths to merge configs from
+	:return
+	"""
     if config_paths:
         if isinstance(config_paths, str):
             if CONFIG_FILE_SEPARATOR in config_paths:
@@ -266,6 +272,12 @@ def get_task_config(
         config_paths: Optional[Union[List[str], str]] = None,
         opts: Optional[list] = None
 ) -> habitat.Config:
+	r"""
+	get config after merging configs stored in yaml files and command line arguments
+	:param config_paths: paths to configs
+	:param opts: optional command line arguments
+	:return: merged config
+	"""
     config = _TC.clone()
     if config_paths:
         if isinstance(config_paths, str):

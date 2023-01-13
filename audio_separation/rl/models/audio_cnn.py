@@ -6,19 +6,19 @@ from audio_separation.common.utils import Flatten
 
 
 class AudioCNN(nn.Module):
-    r"""A Simple 3-Conv CNN followed by a fully connected layer for high res spec.
+    r"""A Simple 3-Conv CNN followed by a fully connected layer for audio spects..
 
     Takes in separated audio outputs (bin/monos) and produces an embedding
 
     Args:
         observation_space: The observation_space of the agent
         output_size: The size of the embedding vector
-        encode_monoFromMem: creates CNN for encoding predicted monaural (concatenation of audio memory outputs) if set to True
+        encode_monoFromMem: creates CNN for encoding predicted monaural from transformer memory if set to True
     """
     def __init__(self, observation_space, output_size, encode_monoFromMem=False,):
         super().__init__()
         self.encode_monoFromMem = encode_monoFromMem
-        # originally 2 channels for binaural or concatenation of monos but spec. sliced up into 16 chunks along the frequency
+        # originally 2 channels for binaural and 1 channel for mono but spec. sliced up into 16 chunks along the frequency
         # dimension (this makes the high-res. specs. easier to deal with)
         self._slice_factor = 16
 

@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import List
 from collections import defaultdict
 import logging
 import pickle
@@ -15,9 +15,7 @@ import habitat_sim
 from habitat_sim.utils.common import quat_from_angle_axis, quat_from_coeffs, quat_to_angle_axis
 from habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
 from habitat.sims.habitat_simulator.actions import HabitatSimActions
-from habitat.core.simulator import (
-    Config,
-    AgentState, ShortestPathPoint)
+from habitat.core.simulator import (Config, AgentState, ShortestPathPoint)
 from habitat_audio.utils import load_points_data, _to_tensor
 
 
@@ -95,6 +93,11 @@ class HabitatSimAudioEnabled(HabitatSim):
             self._sim = DummySimulator()
 
     def get_agent_state(self, agent_id: int = 0) -> habitat_sim.AgentState:
+        r"""
+        get current agent state
+        :param agent_id: agent ID
+        :return: agent state
+        """
         if not self.config.USE_RENDERED_OBSERVATIONS:
             agent_state = super().get_agent_state(agent_id)
         else:
@@ -109,6 +112,14 @@ class HabitatSimAudioEnabled(HabitatSim):
         agent_id: int = 0,
         reset_sensors: bool = True,
     ) -> bool:
+        r"""
+        set agent's state when not using pre-rendered observations
+        :param position: 3D position of the agent
+        :param rotation: rotation angle of the agent
+        :param agent_id: agent ID
+        :param reset_sensors: reset sensors or not
+        :return: None
+        """
         if not self.config.USE_RENDERED_OBSERVATIONS:
             super().set_agent_state(position, rotation, agent_id=agent_id, reset_sensors=reset_sensors)
         else:
@@ -116,18 +127,35 @@ class HabitatSimAudioEnabled(HabitatSim):
 
     @property
     def current_scene_observation_file(self):
+        r"""
+        get path to pre-rendered observations for the current scene
+        :return: path to pre-rendered observations for the current scene
+        """
         return os.path.join(self.config.RENDERED_OBSERVATIONS, self.config.SCENE_DATASET,
                             self.current_scene_name + '.pkl')
 
     @property
     def meta_dir(self):
+        r"""
+        get path to meta-dir containing data about location of navigation nodes and their connectivity
+        :return: path to meta-dir containing data about location of navigation nodes and their connectivity
+        """
         return os.path.join(self.config.AUDIO.META_DIR, self.current_scene_name)
 
     @property
     def current_scene_name(self):
+        r"""
+        get current scene name
+        :return: current scene name
+        """
         return self._current_scene.split('/')[-2]
 
     def reconfigure(self, config: Config) -> None:
+        r"""
+        reconfigure for new episode
+        :param config: config for reconfiguration
+        :return: None
+        """
         self.config = config
         self._current_sound_names = self.config.AGENT_0.SOUND_NAMES
         self._mono_audio_sampling_starting_idxs = np.array(self.config.AGENT_0.SOUND_STARTING_SAMPLING_IDXS, dtype=np.int32)
@@ -187,6 +215,10 @@ class HabitatSimAudioEnabled(HabitatSim):
             raise ValueError("Position misalignment.")
 
     def _get_sim_observation(self):
+        r"""
+        get current observation from simulator
+        :return: current observation
+        """
         joint_index = (self._receiver_position_index, self._rotation_angle)
         if joint_index in self._frame_cache:
             return self._frame_cache[joint_index]
@@ -196,8 +228,10 @@ class HabitatSimAudioEnabled(HabitatSim):
             return sim_obs
 
     def reset(self):
-        # TODO: remove later, for debugging
-        # print("Sim reset called")
+        r"""
+        reset simulator for new episode
+        :return: None
+        """
         logging.debug('Reset simulation')
 
         if not self.config.USE_RENDERED_OBSERVATIONS:
@@ -278,10 +312,20 @@ class HabitatSimAudioEnabled(HabitatSim):
         return observations
     
     def get_orientation(self):
+        r"""
+        get current orientation of the agent
+        :return: current orientation of the agent
+        """
         _base_orientation = 270
         return (_base_orientation - self._rotation_angle) % 360
 
     def write_info_to_obs(self, observations):
+        r"""
+        write agent and audio source node location and orientation info, and scene name to observation dict... probably
+        redundant
+        :param observations: observation dict containing different info about the current observation
+        :return: None
+        """
         observations["agent node and location"] = (self._receiver_position_index,
                                                    self.graph.nodes[self._receiver_position_index]["point"])
         observations["audio source nodes and locations"] = (self._source_position_indices,
@@ -291,6 +335,10 @@ class HabitatSimAudioEnabled(HabitatSim):
 
     @property
     def azimuth_angle(self):
+        r"""
+        get current azimuth of the agent
+        :return: current azimuth of the agent
+        """
         # this is the angle used to index the binaural audio files
         # in mesh coordinate systems, +Y forward, +X rightward, +Z upward
         # azimuth is calculated clockwise so +Y is 0 and +X is 90
@@ -298,6 +346,10 @@ class HabitatSimAudioEnabled(HabitatSim):
 
     @property
     def target_class(self):
+        r"""
+        get target class for current episode
+        :return: target class for current episode
+        """
         return self._target_class
 
     def get_current_gt_bin_audio_components(self):
@@ -324,6 +376,10 @@ class HabitatSimAudioEnabled(HabitatSim):
         return self._mixed_bin_audio_phase
 
     def get_current_mixed_bin_audio_mag_spec(self):
+        r"""
+        get mixed audio spec magnitude at current step
+        :return: mixed audio spec magnitude at current step
+        """
         self._gt_bin_audio_components = []
         self._gt_mono_audio_components = []
         mixed_bin_audio_waveform = 0
@@ -435,6 +491,12 @@ class HabitatSimAudioEnabled(HabitatSim):
         return np.log1p(mixed_bin_audio_magnitude)
 
     def geodesic_distance(self, position_a, position_b):
+        r"""
+        get geodesic distance between 2 nodes
+        :param position_a: position of 1st node
+        :param position_b: position of 2nd node
+        :return: geodesic distance between 2 nodes
+        """
         index_a = self._position_to_index(position_a)
         index_b = self._position_to_index(position_b)
         assert index_a is not None and index_b is not None
@@ -442,7 +504,11 @@ class HabitatSimAudioEnabled(HabitatSim):
 
         return steps
 
-    def get_euclid_dist_to_target_audio_source(self):
+    def get_geo_dist_to_target_audio_source(self):
+        r"""
+        get geodesic distance to target audio source
+        :return: geodesic distance to target audio source
+        """
         current_position = self.get_agent_state().position.tolist()
         distance_to_target = self.geodesic_distance(
             current_position, self.config.AGENT_0.AUDIO_SOURCE_POSITIONS[0]

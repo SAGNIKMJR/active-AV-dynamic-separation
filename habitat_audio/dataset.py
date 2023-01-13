@@ -26,6 +26,7 @@ class NavigationEpisodeCustom(NavigationEpisode):
     Args:
         all_geodesic_distances: geodesic distances of agent to source
             and in between two sources
+        gt_actions: ground-truth actions for episode
     """
 
     all_geodesic_distances: Optional[Dict[str, str]] = None
@@ -34,7 +35,7 @@ class NavigationEpisodeCustom(NavigationEpisode):
 
 @registry.register_dataset(name="AAViDSS")
 class AAViDSSDataset(Dataset):
-    r"""Class inherited from Dataset that loads Point Navigation dataset.
+    r"""Class inherited from Dataset that loads AAViDSS dataset.
     """
 
     episodes: List[NavigationEpisodeCustom]
@@ -42,6 +43,11 @@ class AAViDSSDataset(Dataset):
 
     @staticmethod
     def check_config_paths_exist(config: Config) -> bool:
+        r"""
+        check if paths to episode datasets exist
+        :param config: dataset config
+        :return: flag saying if dataset paths in config exist
+        """
         return os.path.exists(
             config.DATA_PATH.format(version=config.VERSION, split=config.SPLIT)
         ) and os.path.exists(config.SCENES_DIR)
@@ -87,6 +93,8 @@ class AAViDSSDataset(Dataset):
         return scenes
 
     def __init__(self, config: Optional[Config] = None) -> None:
+        r"""Class inherited from Dataset that loads Point Navigation dataset.
+        """
         self.episodes = []
         self._config = config
 
@@ -118,19 +126,13 @@ class AAViDSSDataset(Dataset):
             last_episode_cnt = len(self.episodes)
             logging.info('Sampled {} from {}'.format(num_episode, scene))
 
-    def filter_by_ids(self, scene_ids):
-        episodes_to_keep = list()
-
-        for episode in self.episodes:
-            for scene_id in scene_ids:
-                scene, ep_id = scene_id.split(',')
-                if scene in episode.scene_id and ep_id == episode.episode_id:
-                    episodes_to_keep.append(episode)
-
-        self.episodes = episodes_to_keep
-
-    # filter by scenes for data collection
+    # filter episodes by scenes
     def filter_by_scenes(self, scenes):
+        r"""
+        filter all episodes on the basis of scene names
+        :param scenes: scenes to filter episodes with
+        :return: filtered episodes
+        """
         episodes_to_keep = list()
         for episode in self.episodes:
             episode_scene = episode.scene_id.split("/")[-1].split(".")[0]
@@ -138,8 +140,13 @@ class AAViDSSDataset(Dataset):
                 episodes_to_keep.append(episode)
         self.episodes = episodes_to_keep
 
-    # filter by scenes for data collection
+    # filter episodes by scenes and episode ids
     def filter_by_scenes_n_ids(self, scenes_n_ids):
+        r"""
+        filter all episodes on the basis of scene names and episode IDs
+        :param scenes_n_ids: scene names and episode IDs to filter all episodes with
+        :return: filtered episodes
+        """
         episodes_to_keep = list()
         for episode in self.episodes:
             episode_scene = episode.scene_id.split("/")[-1].split(".")[0]
@@ -151,6 +158,12 @@ class AAViDSSDataset(Dataset):
     def from_json(
         self, json_str: str, scenes_dir: Optional[str] = None, scene_filename: Optional[str] = None
     ) -> None:
+        r"""
+        loads and reads episodes from per-scene json files
+        :param json_str: json file name
+        :param scenes_dir: directory containing json files
+        :return: None
+        """
         deserialized = json.loads(json_str)
         if CONTENT_SCENES_PATH_FIELD in deserialized:
             self.content_scenes_path = deserialized[CONTENT_SCENES_PATH_FIELD]

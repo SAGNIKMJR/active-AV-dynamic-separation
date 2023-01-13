@@ -11,6 +11,7 @@ CHECKPOINT_INTERVAL: 90
 
 RL:
   PPO:
+    # replace with path to checkpoint for passive pretraining
     pretrained_passive_separators_ckpt: "runs/passive_pretrain/new/data/best_ckpt_nonoverlapping_val.pth"
 
     hidden_size: 512

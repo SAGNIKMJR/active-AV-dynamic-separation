@@ -197,16 +197,16 @@ def merge_from_path(config, config_paths):
 	:param config_paths: config paths to merge configs from
 	:return
 	"""
-    if config_paths:
-        if isinstance(config_paths, str):
-            if CONFIG_FILE_SEPARATOR in config_paths:
-                config_paths = config_paths.split(CONFIG_FILE_SEPARATOR)
-            else:
-                config_paths = [config_paths]
+	if config_paths:
+		if isinstance(config_paths, str):
+			if CONFIG_FILE_SEPARATOR in config_paths:
+				config_paths = config_paths.split(CONFIG_FILE_SEPARATOR)
+			else:
+				config_paths = [config_paths]
 
-        for config_path in config_paths:
-            config.merge_from_file(config_path)
-    return config
+		for config_path in config_paths:
+			config.merge_from_file(config_path)
+	return config
 
 
 def get_config(
@@ -278,19 +278,19 @@ def get_task_config(
 	:param opts: optional command line arguments
 	:return: merged config
 	"""
-    config = _TC.clone()
-    if config_paths:
-        if isinstance(config_paths, str):
-            if CONFIG_FILE_SEPARATOR in config_paths:
-                config_paths = config_paths.split(CONFIG_FILE_SEPARATOR)
-            else:
-                config_paths = [config_paths]
+	config = _TC.clone()
+	if config_paths:
+		if isinstance(config_paths, str):
+			if CONFIG_FILE_SEPARATOR in config_paths:
+				config_paths = config_paths.split(CONFIG_FILE_SEPARATOR)
+			else:
+				config_paths = [config_paths]
 
-        for config_path in config_paths:
-            config.merge_from_file(config_path)
+		for config_path in config_paths:
+			config.merge_from_file(config_path)
 
-    if opts:
-        config.merge_from_list(opts)
+	if opts:
+		config.merge_from_list(opts)
 
-    config.freeze()
-    return config
+	config.freeze()
+	return config

@@ -46,13 +46,17 @@ def scale_bss_eval_helper(references, estimate, idx, compute_sir_sar=True):
         references_projection = references.T @ references
 
         references_onto_residual = np.dot(references.transpose(), e_res)
-        b = np.linalg.solve(references_projection, references_onto_residual) + EPS
 
-        e_interf = np.dot(references, b)
-        e_artif = e_res - e_interf + EPS
+        try:
+            b = np.linalg.solve(references_projection, references_onto_residual) + EPS
 
-        si_sir = 10 * np.log10(signal / (e_interf ** 2).sum())
-        si_sar = 10 * np.log10(signal / (e_artif ** 2).sum())
+            e_interf = np.dot(references, b)
+            e_artif = e_res - e_interf + EPS
+
+            si_sir = 10 * np.log10(signal / (e_interf ** 2).sum())
+            si_sar = 10 * np.log10(signal / (e_artif ** 2).sum())
+        except np.linalg.LinAlgError:
+            pass
 
     return si_sdr, si_sir, si_sar, sd_sdr, snr, srr
 

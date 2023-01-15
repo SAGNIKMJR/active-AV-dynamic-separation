@@ -41,8 +41,6 @@ Download the [Matterport3D](https://niessner.github.io/Matterport/) dataset, and
 For further info about the structuring of the associated datasets, refer to ```audio_separation/config/default.py``` and the task configs.
 
 ## Code
-
-## Code
 ###### Pretraining    
 ```
 CUDA_VISIBLE_DEVICES=0 python3 main.py --exp-config audio_separation/config/pretrain_passive.yaml --model-dir runs/passive_pretrain --run-type train NUM_PROCESSES 1

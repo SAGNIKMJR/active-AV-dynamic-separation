@@ -1,6 +1,3 @@
-# active-AV-dynamic-separation
-Code and datasets for 'Active Audio-Visual Separation of Dynamic Sound Sources' (ECCV 2022).
-
 # Active Audio-Visual Separation of Dynamic Sound Sources
 This repository contains the PyTorch implementation of our **ECCV-22 paper** and the associated datasets: 
 
@@ -13,6 +10,9 @@ Project website: [https://vision.cs.utexas.edu/projects/active-av-dynamic-separa
 <p align="center">
   <img src="gfx/concept.png">
 </p>
+
+## Related repos
+[Move2Hear: Active Audio-Visual Source Separation](https://github.com/SAGNIKMJR/move2hear-active-AV-separation) 
 
 ## Abstract
 We explore active audio-visual separation for dynamic sound sources, where an embodied agent moves intelligently in a 3D environment to continuously isolate the time-varying audio stream being emitted by an object of interest. The agent hears a mixed stream of multiple time-varying audio sources (e.g., multiple people conversing and a band playing music at a noisy party). Given a limited time budget, it needs to extract the target sound using egocentric audio-visual observations. We propose a reinforcement learning agent equipped with a novel transformer memory that learns motion policies to control its camera and microphone to recover the dynamic target audio, using self-attention to make high-quality estimates for current timesteps and also simultaneously improve its past estimates. Using highly realistic acoustic SoundSpaces simulations in real-world scanned Matterport3D environments, we show that our model is able to learn efficient behavior to carry out continuous separation of a time-varying audio target.

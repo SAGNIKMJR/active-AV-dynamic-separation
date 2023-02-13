@@ -79,11 +79,13 @@ Download model checkpoints from this [link](https://utexas.box.com/shared/static
 
 ## Citation
 ```
-@article{majumder2022active,
-    author    = {Majumder, Sagnik and Grauman, Kristen},
-    title     = { Active Audio-Visual Separation of Dynamic Sound Sources},
-    journal   = {arXiv preprint arXiv:2202.00850},,
-    year      = {2022},
+@inproceedings{majumder2022active,
+  title={Active audio-visual separation of dynamic sound sources},
+  author={Majumder, Sagnik and Grauman, Kristen},
+  booktitle={Computer Vision--ECCV 2022: 17th European Conference, Tel Aviv, Israel, October 23--27, 2022, Proceedings, Part XXXIX},
+  pages={551--569},
+  year={2022},
+  organization={Springer}
 }
 ```
 

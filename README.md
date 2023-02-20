@@ -1,21 +1,5 @@
-# Active Audio-Visual Separation of Dynamic Sound Sources
-This repository contains the PyTorch implementation of our **ECCV-22 paper** and the associated datasets: 
-
-[Active Audio-Visual Separation of Dynamic Sound Sources](https://vision.cs.utexas.edu/projects/active-av-dynamic-separation)<br />
-Sagnik Majumder and Kristen Grauman<br />
-The University of Texas at Austin, Meta AI Research
-
-Project website: [https://vision.cs.utexas.edu/projects/active-av-dynamic-separation](https://vision.cs.utexas.edu/projects/active-av-dynamic-separation/)
-
-<p align="center">
-  <img src="gfx/concept.png">
-</p>
-
-## Related repos
-[Move2Hear: Active Audio-Visual Source Separation](https://github.com/SAGNIKMJR/move2hear-active-AV-separation) 
-
-## Abstract
-We explore active audio-visual separation for dynamic sound sources, where an embodied agent moves intelligently in a 3D environment to continuously isolate the time-varying audio stream being emitted by an object of interest. The agent hears a mixed stream of multiple time-varying audio sources (e.g., multiple people conversing and a band playing music at a noisy party). Given a limited time budget, it needs to extract the target sound using egocentric audio-visual observations. We propose a reinforcement learning agent equipped with a novel transformer memory that learns motion policies to control its camera and microphone to recover the dynamic target audio, using self-attention to make high-quality estimates for current timesteps and also simultaneously improve its past estimates. Using highly realistic acoustic SoundSpaces simulations in real-world scanned Matterport3D environments, we show that our model is able to learn efficient behavior to carry out continuous separation of a time-varying audio target.
+# Active Audio-Visual Separation Challenge
+This repository contains the Python code and configs for the active audio-visual (AV) separation challenge, which is being hosted as part of the [SoundSpaces 2023 Challenge](https://github.com/facebookresearch/soundspaces-challenge): 
 
 ## Dependencies
 This code has been tested with ```python 3.6.13```, ```habitat-api 0.1.4```, ```habitat-sim 0.1.4``` and ```torch 1.4.0```. Additional python package requirements will be made available in ```requirements.txt```.   
@@ -40,7 +24,7 @@ Download the [Matterport3D](https://niessner.github.io/Matterport/) dataset, and
      
 For further info about the structuring of the associated datasets, refer to ```audio_separation/config/default.py``` and the task configs.
 
-## Code
+## Baselines and Starter Code
 ###### Pretraining    
 ```
 CUDA_VISIBLE_DEVICES=0 python3 main.py --exp-config audio_separation/config/pretrain_passive.yaml --model-dir runs/passive_pretrain --run-type train NUM_PROCESSES 1
@@ -73,21 +57,16 @@ Compute test metric (STFT l2 loss or SI-SDR) values using ```scripts/separated_a
       
 For unheard sounds, use ```config/test/nearTarget_unheard.yaml```, and use the corresponding test directory.
 
-## Model checkpoints
-Download model checkpoints from this [link](https://utexas.box.com/shared/static/7jaww6xew54zv1llmfskhsiyuh3lddqx.zip).
+###### Generating JSON to upload
+Dump JSON file to local disk using ```scripts/separated_audio_quality/dump_challenge_json.ipynb```. Follow instructions in the `submit` tab of the [EvalAI challenge page](https://eval.ai/web/challenges/challenge-page/1971/overview) (will open soon!)<!-- EvalAI challenge page (coming soon) --> to **upload** your evaluation JSON file.
 
+## Baseline Model Checkpoints
+Download the baseline model checkpoints from this [link](https://utexas.box.com/shared/static/7jaww6xew54zv1llmfskhsiyuh3lddqx.zip).
 
-## Citation
-```
-@inproceedings{majumder2022active,
-  title={Active audio-visual separation of dynamic sound sources},
-  author={Majumder, Sagnik and Grauman, Kristen},
-  booktitle={Computer Vision--ECCV 2022: 17th European Conference, Tel Aviv, Israel, October 23--27, 2022, Proceedings, Part XXXIX},
-  pages={551--569},
-  year={2022},
-  organization={Springer}
-}
-```
+## References
+[1] [Active Audio-Visual Separation of Dynamic Sound Sources](https://arxiv.org/pdf/2202.00850.pdf). Sagnik Majumder, Kristen Grauman. ECCV, 2022.
+
+[1] [Move2Hear: Active Audio-Visual Source Separation](https://arxiv.org/pdf/2105.07142.pdf). Sagnik Majumder, Ziad Al-Halah, Kristen Grauman. ICCV, 2021.
 
 # License
 This project is released under the MIT license, as found in the [LICENSE](https://github.com/SAGNIKMJR/active-av-dynamic-separation/blob/main/LICENSE) file.
